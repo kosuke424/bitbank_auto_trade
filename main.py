@@ -1,4 +1,3 @@
-from re import A
 import time
 import pandas as pd
 import requests
@@ -7,8 +6,11 @@ import os
 import configparser
 from bitbank import Bitbank
 
-jpy_balance = 100000 #日本円
+start_balance = 100000 #運用開始時の日本円残高
+jpy_balance = start_balance #日本円
 btc_balance = 0 #btc数量
+amount = 0.001 #一回あたりの取引数量
+fee = 0.12*0.01 #取引手数料(率）
 
 conf = configparser.ConfigParser()
 conf.read('config.ini')
@@ -28,32 +30,31 @@ duration = 2
 
 df = pd.DataFrame()
 
-def buy(buy_price, amount=0.001):
+def trade(current_price, side):
     global jpy_balance
-    global btc_balance 
-    jpy_balance -= buy_price * amount
-    btc_balance += amount 
-    total_balance = jpy_balance + btc_balance * buy_price
+    global btc_balance
+    global amount
+    if side == 'buy':
+        jpy_balance -= (current_price * amount + current_price * amount * fee)
+        btc_balance += amount
+    elif side == 'sell':
+        jpy_balance += (current_price * amount - current_price * amount * fee)
+        btc_balance -= amount
+    elif side == 'through':
+        pass
+    else:
+        pass
+
+    total_balance = jpy_balance + btc_balance * current_price
+    df['side'] = side
+    df['JPY'] = jpy_balance
+    df['BTC'] = btc_balance
+    df['Total'] = total_balance
+    df['P&L'] = total_balance - start_balance 
     print(jpy_balance)
     print(btc_balance)
     print(total_balance)
-    print('buy')
-
-
-
-def sell(sell_price, amount=0.001):
-    global jpy_balance
-    global btc_balance 
-    if btc_balance > 0:
-        jpy_balance += sell_price * amount
-        btc_balance -= amount
-        total_balance = jpy_balance + btc_balance * sell_price
-        print(jpy_balance)
-        print(btc_balance)
-        print(total_balance)
-        print('sell!')
-    else:
-        print("スルー")
+    print(side)
 
 while True:
     time.sleep(interval)
@@ -78,17 +79,18 @@ while True:
     # df['-2sigma'] = df['SMA'] - 2*df['std']
     # df['+2sigma'] = df['SMA'] + 2*df['std']
 
+    # 取引の判断
     if ticker in position.keys():
-        if float(df['price'].iloc[-1]) > df['+2sigma'].iloc[-1]:
+        if float(df['price'].iloc[-1]) > df['+2sigma'].iloc[-1] and btc_balance > 0:
             # and bitbank.check_ex_rate(pair) < float(df['price'].iloc[-1])
-            sell(float(df['price'].iloc[-1]))
-            
+                trade(float(df['price'].iloc[-1]), 'sell')          
         else:
             if float(df['price'].iloc[-1]) < df['-2sigma'].iloc[-1]:
-                buy(float(df['price'].iloc[-1]))
+                trade(float(df['price'].iloc[-1]), 'buy')
             else:
-                print("スルー")
+                trade(float(df['price'].iloc[-1]), 'through')
 
+    # データファイルを出力する
     path = 'data.csv'
     is_file = os.path.isfile(path)
     if is_file:
@@ -98,3 +100,7 @@ while True:
         df.to_csv('data.csv', encoding = 'shift-jis',  index=False)
     
     # df = df.iloc[1:, :]
+
+    #Todo
+    #タイムスタンプ
+    #途中から再開
